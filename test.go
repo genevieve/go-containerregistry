@@ -19,6 +19,8 @@ func main() {
 		panic(err)
 	}
 
+	fmt.Printf("Parsed Reference: %s\n", n.Name())
+
 	imageOpts := []remote.ImageOption{
 		remote.WithTransport(resource.RetryTransport),
 	}
@@ -28,17 +30,25 @@ func main() {
 		panic(err)
 	}
 
+	manifest, err := image.Manifest()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("Image Manifest: %+v\n", manifest)
+
 	layers, err := image.Layers()
 	if err != nil {
 		panic(err)
 	}
 
 	for _, layer := range layers {
-		mediaType, err := layer.MediaType()
-		fmt.Printf("Media Type: %s\n", mediaType)
+		digest, err := layer.Digest()
 		if err != nil {
 			panic(err)
 		}
+
+		fmt.Printf("Layer Digest: %s\n", digest)
 
 		_, err = layer.Compressed()
 		if err != nil {
