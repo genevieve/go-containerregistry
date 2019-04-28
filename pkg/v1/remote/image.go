@@ -19,6 +19,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"sync"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -133,18 +134,43 @@ func (rl *remoteLayer) Digest() (v1.Hash, error) {
 
 // Compressed implements partial.CompressedLayer
 func (rl *remoteLayer) Compressed() (io.ReadCloser, error) {
-	u := rl.ri.url("blobs", rl.digest.String())
-	resp, err := rl.ri.Client.Get(u.String())
+	urls := []url.URL{rl.ri.url("blobs", rl.digest.String())}
+
+	m, err := rl.Manifest()
 	if err != nil {
 		return nil, err
 	}
 
-	if err := transport.CheckError(resp, http.StatusOK); err != nil {
-		resp.Body.Close()
-		return nil, err
+	for _, layer := range m.Layers {
+		for _, s := range layer.URLs {
+			u, err := url.Parse(s)
+			if err != nil {
+				return nil, err
+			}
+			urls = append(urls, *u)
+		}
 	}
 
-	return v1util.VerifyReadCloser(resp.Body, rl.digest)
+	// The lastErr for most pulls will be the same (the first error), but for
+	// foreign layers we'll want to surface the last one.
+	var lastErr error
+	for _, u := range urls {
+		resp, err := rl.ri.Client.Get(u.String())
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if err := transport.CheckError(resp, http.StatusOK); err != nil {
+			resp.Body.Close()
+			lastErr = err
+			continue
+		}
+
+		return v1util.VerifyReadCloser(resp.Body, rl.digest)
+	}
+
+	return nil, lastErr
 }
 
 // Manifest implements partial.WithManifest so that we can use partial.BlobSize below.
